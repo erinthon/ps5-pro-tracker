@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "df69f6f7-4139-4f88-80a0-b51309b64d51",
-  "prevId": "3bdbacdb-dd36-40be-bd7f-11a968daa67b",
+  "id": "0a3309df-dc32-48aa-9c26-36562bee6df8",
+  "prevId": "df69f6f7-4139-4f88-80a0-b51309b64d51",
   "tables": {
     "offers": {
       "name": "offers",
@@ -58,7 +58,7 @@
         },
         "imageUrl": {
           "name": "imageUrl",
-          "type": "varchar(768)",
+          "type": "varchar(1024)",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

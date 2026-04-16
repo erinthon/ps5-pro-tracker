@@ -1,11 +1,11 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingDown, Zap, BarChart3, Bell } from "lucide-react";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { TrendingDown, Zap, BarChart3, Bell, LogIn, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Home() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [, navigate] = useLocation();
 
   const features = [
@@ -33,6 +33,25 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted">
+      {/* Header com auth */}
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pt-6 flex justify-end items-center gap-3">
+        {loading ? null : user ? (
+          <>
+            <span className="text-sm text-muted-foreground">Olá, {user.name ?? user.email}</span>
+            <Button variant="outline" size="sm" onClick={() => logout()} className="gap-2">
+              <LogOut className="h-4 w-4" /> Sair
+            </Button>
+          </>
+        ) : (
+          <a href="/api/auth/google">
+            <Button variant="outline" size="sm" className="gap-2">
+              <LogIn className="h-4 w-4" />
+              Entrar com Google
+            </Button>
+          </a>
+        )}
+      </div>
+
       {/* Hero Section */}
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-24">
         <div className="text-center mb-12">

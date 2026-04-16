@@ -41,7 +41,7 @@ export const offers = mysqlTable("offers", {
   title: text("title").notNull(),
   price: int("price").notNull(), // Preço em centavos (ex: 5999 = R$ 59,99)
   originalPrice: int("originalPrice"), // Preço original antes do desconto
-  url: varchar("url", { length: 1024 }).notNull().unique(),
+  url: varchar("url", { length: 768 }).notNull().unique(),
   productId: varchar("productId", { length: 255 }), // ID único do produto na loja
   imageUrl: varchar("imageUrl", { length: 1024 }),
   description: text("description"),

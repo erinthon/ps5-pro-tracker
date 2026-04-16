@@ -1,0 +1,1 @@
+ALTER TABLE `offers` MODIFY COLUMN `imageUrl` varchar(1024);

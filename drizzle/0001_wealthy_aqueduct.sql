@@ -4,7 +4,7 @@ CREATE TABLE `offers` (
 	`title` text NOT NULL,
 	`price` int NOT NULL,
 	`originalPrice` int,
-	`url` varchar(1024) NOT NULL,
+	`url` varchar(768) NOT NULL,
 	`productId` varchar(255),
 	`imageUrl` varchar(1024),
 	`description` text,

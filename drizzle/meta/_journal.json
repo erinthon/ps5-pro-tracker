@@ -15,6 +15,13 @@
       "when": 1775425512143,
       "tag": "0001_wealthy_aqueduct",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776362333427,
+      "tag": "0002_luxuriant_dormammu",
+      "breakpoints": true
     }
   ]
 }

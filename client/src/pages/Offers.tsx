@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
+import { Loader2, RefreshCw, TrendingDown, TrendingUp, LogIn, LogOut } from "lucide-react";
 
 export default function Offers() {
+  const { user, loading: authLoading, logout } = useAuth();
   const [minPrice, setMinPrice] = useState<number | undefined>();
   const [maxPrice, setMaxPrice] = useState<number | undefined>();
   const [storeId, setStoreId] = useState<number | undefined>();
@@ -37,6 +39,16 @@ export default function Offers() {
     return sorted;
   }, [offers, sortBy]);
 
+  const safeUrl = useCallback((url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "#";
+      return url;
+    } catch {
+      return "#";
+    }
+  }, []);
+
   const handleRunCrawler = () => {
     runCrawler(undefined, {
       onSuccess: () => {
@@ -56,11 +68,31 @@ export default function Offers() {
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">PlayStation 5 Pro Tracker</h1>
-          <p className="text-muted-foreground">
-            Monitore ofertas em tempo real de múltiplos e-commerces brasileiros
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">PlayStation 5 Pro Tracker</h1>
+            <p className="text-muted-foreground">
+              Monitore ofertas em tempo real de múltiplos e-commerces brasileiros
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 pt-1">
+            {!authLoading && (user ? (
+              <>
+                <span className="text-sm text-muted-foreground hidden sm:block">
+                  {user.name ?? user.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => logout()} className="gap-2">
+                  <LogOut className="h-4 w-4" /> Sair
+                </Button>
+              </>
+            ) : (
+              <a href="/api/auth/google">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <LogIn className="h-4 w-4" /> Entrar com Google
+                </Button>
+              </a>
+            ))}
+          </div>
         </div>
 
         {/* Filtros */}
@@ -254,7 +286,7 @@ export default function Offers() {
                       </div>
 
                       <a
-                        href={offer.url}
+                        href={safeUrl(offer.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-block w-full"

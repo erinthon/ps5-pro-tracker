@@ -51,10 +51,9 @@ async function getOrCreateStore(name: string, url: string) {
     return existing[0];
   }
 
-  const result = await db.insert(stores).values({ name, url });
-  const insertedId = (result as any).insertId;
+  const [inserted] = await db.insert(stores).values({ name, url }).$returningId();
 
-  return { id: insertedId, name, url, createdAt: new Date() };
+  return { id: inserted.id, name, url, createdAt: new Date() };
 }
 
 async function isDuplicateOffer(url: string): Promise<boolean> {
@@ -105,7 +104,7 @@ async function createOrUpdateOffer(
     return { id: existingOffer.id, isNew: false };
   } else {
     // Criar nova oferta
-    const result = await db.insert(offers).values({
+    const [inserted] = await db.insert(offers).values({
       storeId,
       title: scrapedOffer.title,
       price: scrapedOffer.price,
@@ -117,20 +116,25 @@ async function createOrUpdateOffer(
       inStock: scrapedOffer.inStock ? 1 : 0,
       rating: scrapedOffer.rating,
       reviewCount: scrapedOffer.reviewCount,
-    });
+    }).$returningId();
 
-    const insertedId = (result as any).insertId;
-
-    // Registrar no histórico de preços
     await db.insert(priceHistory).values({
-      offerId: insertedId,
+      offerId: inserted.id,
       price: scrapedOffer.price,
       originalPrice: scrapedOffer.originalPrice,
       inStock: scrapedOffer.inStock ? 1 : 0,
     });
 
-    return { id: insertedId, isNew: true };
+    return { id: inserted.id, isNew: true };
   }
+}
+
+async function clearOffers() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // priceHistory deletes via cascade
+  await db.delete(offers);
+  console.log("[Crawler] Lista de ofertas limpa");
 }
 
 export async function runCrawler(): Promise<{
@@ -148,6 +152,8 @@ export async function runCrawler(): Promise<{
   let updatedOffers = 0;
 
   try {
+    await clearOffers();
+
     for (const storeConfig of STORES) {
       try {
         console.log(`[Crawler] Scraping ${storeConfig.name}...`);
