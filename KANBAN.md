@@ -43,7 +43,7 @@
 | EXTRA | **Aumentar acertividade do filtro de produtos** — corrigido bug de term-length (`>3`→`>=3`), adicionada detecção de intenção de console (exige "console" no título quando query indica console), blocklist expandida. 18 testes em `server/scrapers/filters.test.ts`. |
 | EXTRA | **Fix 503 Amazon / headers realistas + retry** — criado `server/scrapers/http.ts` com 8 user-agents, headers `sec-ch-ua`/`sec-fetch-*`/`Cache-Control`/`Accept-Encoding: br` e retry automático em 503/429 (delays 1.5s e 4s). Os três scrapers migrados para usar `fetchHtml`. L-04 resolvido como consequência. |
 | EXTRA | **Fix preço incorreto nos scrapers** — Amazon: seletor trocado para `span.a-price:not(.a-text-price) span.a-offscreen` evitando capturar preço riscado. Mercado Livre: prioriza `[itemprop="price"]` content (preço total machine-readable), fallback para parsing textual. |
-| EXTRA | **Fix URL instável causando link perdido + preço trocado** — Amazon: URL normalizada para `/dp/ASIN` canônico (o `ref=sr_1_N` fica no path, não na query string, e varia por posição). Mercado Livre: query params (`?pdp_filters=...`) removidos. Sem normalização, cada scrape criava registro novo e deletava o antigo via `deleteStaleOffersForStore`. |
+| EXTRA | **Fix URL instável causando link perdido + preço trocado** — Amazon: URL normalizada para `/dp/ASIN` canônico (o `ref=sr_1_N` fica no path, não na query string, e varia por posição). Mercado Livre: query params de posição/sessão removidos, mas `wid` preservado — sem ele o link vai para a página de catálogo que exibe um vendedor diferente com preço diferente. |
 
 ---
 
