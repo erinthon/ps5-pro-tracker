@@ -48,7 +48,8 @@ export async function scrapeMercadoLivre(searchQuery: string): Promise<ScrapedOf
         // Ignorar anúncios com URL de rastreamento dinâmica
         if (href.includes("click1.mercadolivre") || href.includes("mclics")) return;
 
-        const url = href.split("#")[0];
+        // Strip query params and fragment — both vary across search positions/sessions
+        const url = href.split("#")[0].split("?")[0];
         const productId = extractProductId(href);
 
         const $priceContainer = $item.find("div.poly-price__current");

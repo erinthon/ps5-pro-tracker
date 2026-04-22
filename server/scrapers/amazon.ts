@@ -41,7 +41,10 @@ export async function scrapeAmazon(searchQuery: string): Promise<ScrapedOffer[]>
         if (!title || !href) return;
 
         const cleanPath = href.split("?")[0];
-        const url = cleanPath.startsWith("http") ? cleanPath : `https://www.amazon.com.br${cleanPath}`;
+        const rawUrl = cleanPath.startsWith("http") ? cleanPath : `https://www.amazon.com.br${cleanPath}`;
+        // Normalize to /dp/ASIN — the ref= part lives in the path and varies by search position
+        const asinMatch = rawUrl.match(/\/dp\/([A-Z0-9]{10})/i);
+        const url = asinMatch ? `https://www.amazon.com.br/dp/${asinMatch[1]}` : rawUrl;
 
         // Exclude .a-text-price (crossed-out original) — it appears first in DOM and would be picked up by .first()
         const priceText = $item.find("span.a-price:not(.a-text-price) span.a-offscreen").first().text().trim();
