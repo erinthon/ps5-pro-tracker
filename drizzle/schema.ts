@@ -45,6 +45,7 @@ export const offers = mysqlTable("offers", {
   productId: varchar("productId", { length: 255 }), // ID único do produto na loja
   imageUrl: varchar("imageUrl", { length: 1024 }),
   description: text("description"),
+  sellerName: varchar("sellerName", { length: 255 }),
   inStock: int("inStock").default(1).notNull(), // 1 = em estoque, 0 = fora de estoque
   rating: int("rating"), // Rating em centésimos (ex: 450 = 4.50)
   reviewCount: int("reviewCount"),

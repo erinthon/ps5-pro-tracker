@@ -59,14 +59,14 @@ export function isSchedulerRunning(): boolean {
   return cronJob !== null;
 }
 
-export async function runCrawlerManually() {
+export async function runCrawlerManually(itemId?: string) {
   if (isRunning) {
     throw new Error("Crawler já está em execução");
   }
 
   isRunning = true;
   try {
-    return await runCrawler();
+    return await runCrawler(itemId);
   } finally {
     isRunning = false;
   }

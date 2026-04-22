@@ -1,6 +1,5 @@
-import axios from "axios";
 import * as cheerio from "cheerio";
-import { isPS5ProConsole } from "./filters";
+import { fetchHtml } from "./http";
 
 export interface ScrapedOffer {
   title: string;
@@ -9,20 +8,10 @@ export interface ScrapedOffer {
   url: string;
   productId: string;
   imageUrl?: string;
+  sellerName?: string;
   rating?: number;
   reviewCount?: number;
   inStock: boolean;
-}
-
-const SEARCH_URL = "https://lista.mercadolivre.com.br/console-playstation-5-pro";
-
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-];
-
-function getRandomUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
 function parsePriceParts(fraction: string, cents?: string): number {
@@ -39,21 +28,11 @@ function extractProductId(href: string): string {
   return href.split("/").filter(Boolean).pop() ?? "";
 }
 
-export async function scrapeMercadoLivre(): Promise<ScrapedOffer[]> {
+export async function scrapeMercadoLivre(searchQuery: string): Promise<ScrapedOffer[]> {
+  const searchUrl = `https://lista.mercadolivre.com.br/${searchQuery.replace(/\s+/g, "-")}`;
   try {
-    const response = await axios.get(SEARCH_URL, {
-      headers: {
-        "User-Agent": getRandomUserAgent(),
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        DNT: "1",
-        Connection: "keep-alive",
-      },
-      timeout: 15000,
-    });
-
-    const $ = cheerio.load(response.data);
+    const html = await fetchHtml(searchUrl);
+    const $ = cheerio.load(html);
     const offers: ScrapedOffer[] = [];
 
     $("li.ui-search-layout__item").each((_, element) => {
@@ -69,20 +48,25 @@ export async function scrapeMercadoLivre(): Promise<ScrapedOffer[]> {
         // Ignorar anúncios com URL de rastreamento dinâmica
         if (href.includes("click1.mercadolivre") || href.includes("mclics")) return;
 
-        // Filtrar apenas console PS5 Pro
-        const titleLower = title.toLowerCase();
-        if (!isPS5ProConsole(titleLower)) return;
-
         const url = href.split("#")[0];
         const productId = extractProductId(href);
 
         const $priceContainer = $item.find("div.poly-price__current");
-        const priceFraction = $priceContainer.find(".andes-money-amount__fraction").first().text().trim();
-        const priceCents = $priceContainer.find(".andes-money-amount__cents").first().text().trim();
 
-        if (!priceFraction) return;
+        // Prefer machine-readable itemprop content — avoids picking up installment amounts
+        const itemPropPrice = $priceContainer.find("[itemprop='price']").attr("content");
+        let price: number;
+        if (itemPropPrice) {
+          price = Math.round(parseFloat(itemPropPrice) * 100);
+        } else {
+          // Fallback: use the first .andes-money-amount__fraction in the container
+          const priceFraction = $priceContainer.find(".andes-money-amount__fraction").first().text().trim();
+          const priceCents = $priceContainer.find(".andes-money-amount__cents").first().text().trim();
+          if (!priceFraction) return;
+          price = parsePriceParts(priceFraction, priceCents);
+        }
 
-        const price = parsePriceParts(priceFraction, priceCents);
+        if (!price) return;
 
         const $originalPrice = $item.find("s.andes-money-amount--previous");
         const origFraction = $originalPrice.find(".andes-money-amount__fraction").text().trim();
@@ -95,7 +79,15 @@ export async function scrapeMercadoLivre(): Promise<ScrapedOffer[]> {
         const ratingText = $item.find(".poly-phrase-label").first().text().trim();
         const rating = ratingText ? Math.round(parseFloat(ratingText.replace(",", ".")) * 100) : undefined;
 
-        offers.push({ title, price, originalPrice, url, productId, imageUrl, rating, inStock: !outOfStock });
+        const reviewText = $item.find(".poly-reviews__total").first().text().trim();
+        const reviewCount = reviewText ? parseInt(reviewText.replace(/\D/g, ""), 10) || undefined : undefined;
+
+        const sellerName =
+          $item.find(".poly-component__seller").text().trim() ||
+          $item.find("[data-testid='seller-name']").text().trim() ||
+          undefined;
+
+        offers.push({ title, price, originalPrice, url, productId, imageUrl, sellerName, rating, reviewCount, inStock: !outOfStock });
       } catch (err) {
         console.error("[MercadoLivre Scraper] Erro ao processar item:", err);
       }

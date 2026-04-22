@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "./db";
+import { getDb, deleteStaleOffersForStore } from "./db";
 import { offers, priceHistory, stores } from "../drizzle/schema";
 import { scrapeMercadoLivre } from "./scrapers/mercadolivre";
 import { scrapeAmazon } from "./scrapers/amazon";
 import { scrapeMagazineLuiza } from "./scrapers/magazineluiza";
+import { getCatalogItem, DEFAULT_ITEM_ID, type MatchContext } from "../shared/catalog";
 
 interface ScrapedOffer {
   title: string;
@@ -12,6 +13,7 @@ interface ScrapedOffer {
   url: string;
   productId: string;
   imageUrl?: string;
+  sellerName?: string;
   rating?: number;
   reviewCount?: number;
   inStock: boolean;
@@ -20,7 +22,7 @@ interface ScrapedOffer {
 interface CrawlerStore {
   name: string;
   url: string;
-  scraper: () => Promise<ScrapedOffer[]>;
+  scraper: (searchQuery: string) => Promise<ScrapedOffer[]>;
 }
 
 const STORES: CrawlerStore[] = [
@@ -56,14 +58,6 @@ async function getOrCreateStore(name: string, url: string) {
   return { id: inserted.id, name, url, createdAt: new Date() };
 }
 
-async function isDuplicateOffer(url: string): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
-
-  const existing = await db.select().from(offers).where(eq(offers.url, url)).limit(1);
-  return existing.length > 0;
-}
-
 async function createOrUpdateOffer(
   storeId: number,
   scrapedOffer: ScrapedOffer
@@ -86,6 +80,7 @@ async function createOrUpdateOffer(
       .set({
         price: scrapedOffer.price,
         originalPrice: scrapedOffer.originalPrice,
+        sellerName: scrapedOffer.sellerName,
         inStock: scrapedOffer.inStock ? 1 : 0,
         lastSeen: new Date(),
       })
@@ -112,7 +107,7 @@ async function createOrUpdateOffer(
       url: scrapedOffer.url,
       productId: scrapedOffer.productId,
       imageUrl: scrapedOffer.imageUrl,
-      description: scrapedOffer.title,
+      sellerName: scrapedOffer.sellerName,
       inStock: scrapedOffer.inStock ? 1 : 0,
       rating: scrapedOffer.rating,
       reviewCount: scrapedOffer.reviewCount,
@@ -129,21 +124,14 @@ async function createOrUpdateOffer(
   }
 }
 
-async function clearOffers() {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  // priceHistory deletes via cascade
-  await db.delete(offers);
-  console.log("[Crawler] Lista de ofertas limpa");
-}
-
-export async function runCrawler(): Promise<{
+export async function runCrawler(itemId = DEFAULT_ITEM_ID): Promise<{
   totalOffers: number;
   newOffers: number;
   updatedOffers: number;
   errors: string[];
 }> {
-  console.log("[Crawler] Iniciando ciclo de scraping...");
+  const catalogItem = getCatalogItem(itemId);
+  console.log(`[Crawler] Iniciando ciclo para "${catalogItem.label}"...`);
 
   const startTime = Date.now();
   const errors: string[] = [];
@@ -152,8 +140,6 @@ export async function runCrawler(): Promise<{
   let updatedOffers = 0;
 
   try {
-    await clearOffers();
-
     for (const storeConfig of STORES) {
       try {
         console.log(`[Crawler] Scraping ${storeConfig.name}...`);
@@ -161,8 +147,15 @@ export async function runCrawler(): Promise<{
         // Obter ou criar store
         const store = await getOrCreateStore(storeConfig.name, storeConfig.url);
 
-        // Executar scraper
-        const scrapedOffers = await storeConfig.scraper();
+        // Executar scraper e aplicar filtro do catálogo
+        const rawOffers = await storeConfig.scraper(catalogItem.searchQuery);
+        const scrapedOffers = rawOffers.filter((o) =>
+          catalogItem.isMatch({ title: o.title.toLowerCase(), price: o.price })
+        );
+
+        if (rawOffers.length !== scrapedOffers.length) {
+          console.log(`[Crawler] ${storeConfig.name}: ${rawOffers.length - scrapedOffers.length} itens descartados pelo filtro do catálogo`);
+        }
 
         // Processar cada oferta
         for (const scrapedOffer of scrapedOffers) {
@@ -178,6 +171,17 @@ export async function runCrawler(): Promise<{
             const errorMsg = `Erro ao processar oferta de ${storeConfig.name}: ${error}`;
             console.error(errorMsg);
             errors.push(errorMsg);
+          }
+        }
+
+        // Remover ofertas desta loja que não apareceram no scrape atual
+        // (itens obsoletos, fora de catálogo ou filtrados pelas novas regras)
+        // Só executa se o scraper retornou resultados — protege contra wipe por falha silenciosa
+        if (scrapedOffers.length > 0) {
+          const activeUrls = scrapedOffers.map((o) => o.url);
+          const removed = await deleteStaleOffersForStore(store.id, activeUrls);
+          if (removed > 0) {
+            console.log(`[Crawler] ${storeConfig.name}: ${removed} ofertas obsoletas removidas`);
           }
         }
 

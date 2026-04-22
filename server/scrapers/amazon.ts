@@ -1,6 +1,5 @@
-import axios from "axios";
 import * as cheerio from "cheerio";
-import { isPS5ProConsole } from "./filters";
+import { fetchHtml } from "./http";
 
 export interface ScrapedOffer {
   title: string;
@@ -9,20 +8,10 @@ export interface ScrapedOffer {
   url: string;
   productId: string;
   imageUrl?: string;
+  sellerName?: string;
   rating?: number;
   reviewCount?: number;
   inStock: boolean;
-}
-
-const SEARCH_URL = "https://www.amazon.com.br/s?k=console+playstation+5+pro";
-
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-];
-
-function getRandomUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
 function parsePriceParts(whole: string, fraction?: string): number {
@@ -32,21 +21,11 @@ function parsePriceParts(whole: string, fraction?: string): number {
   return intPart * 100 + centPart;
 }
 
-export async function scrapeAmazon(): Promise<ScrapedOffer[]> {
+export async function scrapeAmazon(searchQuery: string): Promise<ScrapedOffer[]> {
+  const searchUrl = `https://www.amazon.com.br/s?k=${encodeURIComponent(searchQuery)}`;
   try {
-    const response = await axios.get(SEARCH_URL, {
-      headers: {
-        "User-Agent": getRandomUserAgent(),
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        DNT: "1",
-        Connection: "keep-alive",
-      },
-      timeout: 15000,
-    });
-
-    const $ = cheerio.load(response.data);
+    const html = await fetchHtml(searchUrl);
+    const $ = cheerio.load(html);
     const offers: ScrapedOffer[] = [];
 
     $("div[data-component-type='s-search-result']").each((_, element) => {
@@ -64,7 +43,8 @@ export async function scrapeAmazon(): Promise<ScrapedOffer[]> {
         const cleanPath = href.split("?")[0];
         const url = cleanPath.startsWith("http") ? cleanPath : `https://www.amazon.com.br${cleanPath}`;
 
-        const priceText = $item.find("span.a-offscreen").first().text().trim();
+        // Exclude .a-text-price (crossed-out original) — it appears first in DOM and would be picked up by .first()
+        const priceText = $item.find("span.a-price:not(.a-text-price) span.a-offscreen").first().text().trim();
         if (!priceText) return;
 
         // Formato: "R$ 8.099,00"
@@ -89,9 +69,12 @@ export async function scrapeAmazon(): Promise<ScrapedOffer[]> {
         const reviewText = $item.find("span.a-size-base.s-underline-text").first().text().trim();
         const reviewCount = reviewText ? parseInt(reviewText.replace(/\D/g, ""), 10) || undefined : undefined;
 
-        if (!isPS5ProConsole(title.toLowerCase())) return;
+        // Vendedor: "Vendido por X" aparece em alguns resultados do search
+        const soldByText = $item.find(".a-row.a-size-base.a-color-secondary").text();
+        const soldByMatch = soldByText.match(/Vendido por\s+(.+)/i);
+        const sellerName = soldByMatch?.[1]?.trim() || undefined;
 
-        offers.push({ title, price, originalPrice, url, productId, imageUrl, rating, reviewCount, inStock: !outOfStock });
+        offers.push({ title, price, originalPrice, url, productId, imageUrl, sellerName, rating, reviewCount, inStock: !outOfStock });
       } catch (err) {
         console.error("[Amazon Scraper] Erro ao processar item:", err);
       }

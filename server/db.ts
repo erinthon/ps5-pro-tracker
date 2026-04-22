@@ -1,4 +1,4 @@
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, notInArray, SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, offers, priceHistory, stores } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -101,35 +101,35 @@ export async function getOffersWithFilters(params: {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [];
+  const conditions: SQL[] = [];
 
-  if (params.minPrice !== undefined) {
-    conditions.push(gte(offers.price, params.minPrice));
-  }
-  if (params.maxPrice !== undefined) {
-    conditions.push(lte(offers.price, params.maxPrice));
-  }
-  if (params.storeId !== undefined) {
-    conditions.push(eq(offers.storeId, params.storeId));
-  }
-  if (params.inStock !== undefined) {
-    conditions.push(eq(offers.inStock, params.inStock ? 1 : 0));
-  }
+  if (params.minPrice !== undefined) conditions.push(gte(offers.price, params.minPrice));
+  if (params.maxPrice !== undefined) conditions.push(lte(offers.price, params.maxPrice));
+  if (params.storeId !== undefined) conditions.push(eq(offers.storeId, params.storeId));
+  if (params.inStock !== undefined) conditions.push(eq(offers.inStock, params.inStock ? 1 : 0));
 
-  let baseQuery = db.select().from(offers);
-
-  if (conditions.length > 0) {
-    baseQuery = baseQuery.where(and(...conditions)) as any;
-  }
-
-  if (params.limit) {
-    baseQuery = baseQuery.limit(params.limit) as any;
-  }
-  if (params.offset) {
-    baseQuery = baseQuery.offset(params.offset) as any;
-  }
-
-  return baseQuery;
+  return db
+    .select({
+      id: offers.id,
+      storeId: offers.storeId,
+      storeName: stores.name,
+      title: offers.title,
+      price: offers.price,
+      originalPrice: offers.originalPrice,
+      url: offers.url,
+      imageUrl: offers.imageUrl,
+      sellerName: offers.sellerName,
+      inStock: offers.inStock,
+      rating: offers.rating,
+      reviewCount: offers.reviewCount,
+      lastSeen: offers.lastSeen,
+      createdAt: offers.createdAt,
+    })
+    .from(offers)
+    .leftJoin(stores, eq(offers.storeId, stores.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .limit(params.limit ?? 50)
+    .offset(params.offset ?? 0);
 }
 
 export async function getOfferById(id: number) {
@@ -152,4 +152,20 @@ export async function getStores() {
   if (!db) return [];
 
   return db.select().from(stores);
+}
+
+/**
+ * Remove ofertas de uma loja que não estão na lista de URLs ativas.
+ * Chamado após cada scrape bem-sucedido para limpar itens obsoletos ou filtrados.
+ * Não executa se activeUrls estiver vazio (proteção contra wipe acidental em falha do scraper).
+ */
+export async function deleteStaleOffersForStore(storeId: number, activeUrls: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db || activeUrls.length === 0) return 0;
+
+  const result = await db
+    .delete(offers)
+    .where(and(eq(offers.storeId, storeId), notInArray(offers.url, activeUrls)));
+
+  return (result as any)?.[0]?.affectedRows ?? 0;
 }
