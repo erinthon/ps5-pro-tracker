@@ -111,6 +111,8 @@ temp/
 
 # Claude Code local config
 .claude/
+.mcp.json
+CLAUDE.local.md
 
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
