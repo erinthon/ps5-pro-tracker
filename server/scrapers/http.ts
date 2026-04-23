@@ -1,4 +1,6 @@
 import axios from "axios";
+import puppeteer from "puppeteer";
+import { existsSync } from "node:fs";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -67,4 +69,44 @@ export async function fetchHtml(url: string, extra: Record<string, string> = {})
   }
 
   throw new Error(`[HTTP] Max retries atingido para ${url}`);
+}
+
+const CHROME_PATHS = [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+];
+
+function findChrome(): string | undefined {
+  const envPath = process.env.CHROME_EXECUTABLE_PATH;
+  if (envPath && existsSync(envPath)) return envPath;
+  return CHROME_PATHS.find(existsSync);
+}
+
+export async function fetchHtmlWithBrowser(
+  url: string,
+  waitUntil: "networkidle2" | "domcontentloaded" = "networkidle2"
+): Promise<string> {
+  const executablePath = findChrome();
+  if (!executablePath) {
+    throw new Error("[Browser] Chrome não encontrado. Instale o Chrome ou defina CHROME_EXECUTABLE_PATH.");
+  }
+
+  const browser = await puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(randomUA());
+    await page.setExtraHTTPHeaders({ "Accept-Language": "pt-BR,pt;q=0.9" });
+    await page.goto(url, { waitUntil, timeout: 30_000 });
+    return await page.content();
+  } finally {
+    await browser.close();
+  }
 }

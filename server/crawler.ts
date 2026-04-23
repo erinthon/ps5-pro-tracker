@@ -5,7 +5,6 @@ import { scrapeMercadoLivre } from "./scrapers/mercadolivre";
 import { scrapeAmazon } from "./scrapers/amazon";
 import { scrapeMagazineLuiza } from "./scrapers/magazineluiza";
 import { scrapeKabum } from "./scrapers/kabum";
-import { scrapeCasasBahia } from "./scrapers/casasbahia";
 import { getCatalogItem, DEFAULT_ITEM_ID, type MatchContext } from "../shared/catalog";
 import { sendPriceDropEmail } from "./_core/email";
 
@@ -49,11 +48,8 @@ const STORES: CrawlerStore[] = [
     url: "https://www.kabum.com.br",
     scraper: scrapeKabum,
   },
-  {
-    name: "Casas Bahia",
-    url: "https://www.casasbahia.com.br",
-    scraper: scrapeCasasBahia,
-  },
+  // Casas Bahia removida: Akamai Bot Manager bloqueia search/listing pages
+  // para scraping automatizado mesmo com browser real. Requer proxies residenciais.
 ];
 
 async function getOrCreateStore(name: string, url: string) {

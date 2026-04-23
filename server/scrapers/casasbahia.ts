@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { fetchHtml } from "./http";
+import { fetchHtmlWithBrowser } from "./http";
 
 export interface ScrapedOffer {
   title: string;
@@ -16,10 +16,6 @@ export interface ScrapedOffer {
 
 const BASE_URL = "https://www.casasbahia.com.br";
 
-const CB_HEADERS: Record<string, string> = {
-  Referer: `${BASE_URL}/`,
-  Origin: BASE_URL,
-};
 
 function parsePriceBRL(raw: unknown): number | undefined {
   if (typeof raw === "number" && raw > 0) return Math.round(raw * 100);
@@ -367,7 +363,7 @@ export async function scrapeCasasBahia(searchQuery: string): Promise<ScrapedOffe
   const searchUrl = `${BASE_URL}/busca?q=${q}`;
 
   try {
-    const html = await fetchHtml(searchUrl, CB_HEADERS);
+    const html = await fetchHtmlWithBrowser(searchUrl);
 
     const nextDataOffers = parseFromNextData(html);
     if (nextDataOffers.length > 0) {
