@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, RefreshCw, LogIn, LogOut, Star, Store, User, Clock, CalendarDays, Tag, PackageX } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { PriceHistoryChart } from "@/components/PriceHistoryChart";
+import { Loader2, RefreshCw, LogIn, LogOut, Star, Store, User, Clock, CalendarDays, TrendingUp, PackageX } from "lucide-react";
 import { CATALOG, DEFAULT_ITEM_ID } from "@shared/catalog";
 
 function formatPrice(centavos: number) {
@@ -358,11 +360,26 @@ export default function Offers() {
                       </div>
 
                       {/* CTA */}
-                      <a href={safeUrl(offer.url)} target="_blank" rel="noopener noreferrer" className="block">
-                        <Button className="w-full" variant="outline" size="sm">
-                          Ver Oferta →
-                        </Button>
-                      </a>
+                      <div className="flex gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-1.5 flex-1">
+                              <TrendingUp className="h-3.5 w-3.5" /> Histórico
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-lg">
+                            <DialogHeader>
+                              <DialogTitle>Histórico de Preços</DialogTitle>
+                            </DialogHeader>
+                            <PriceHistoryChart offerId={offer.id} offerTitle={offer.title} />
+                          </DialogContent>
+                        </Dialog>
+                        <a href={safeUrl(offer.url)} target="_blank" rel="noopener noreferrer" className="flex-1">
+                          <Button className="w-full" variant="outline" size="sm">
+                            Ver Oferta →
+                          </Button>
+                        </a>
+                      </div>
 
                     </div>
                   </Card>
