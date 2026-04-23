@@ -5,6 +5,7 @@ import { scrapeMercadoLivre } from "./scrapers/mercadolivre";
 import { scrapeAmazon } from "./scrapers/amazon";
 import { scrapeMagazineLuiza } from "./scrapers/magazineluiza";
 import { scrapeKabum } from "./scrapers/kabum";
+import { scrapeCasasBahia } from "./scrapers/casasbahia";
 import { getCatalogItem, DEFAULT_ITEM_ID, type MatchContext } from "../shared/catalog";
 import { sendPriceDropEmail } from "./_core/email";
 
@@ -47,6 +48,11 @@ const STORES: CrawlerStore[] = [
     name: "KaBuM!",
     url: "https://www.kabum.com.br",
     scraper: scrapeKabum,
+  },
+  {
+    name: "Casas Bahia",
+    url: "https://www.casasbahia.com.br",
+    scraper: scrapeCasasBahia,
   },
 ];
 

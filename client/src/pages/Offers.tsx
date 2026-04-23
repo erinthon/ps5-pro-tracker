@@ -44,6 +44,8 @@ const STORE_COLORS: Record<string, string> = {
   "Mercado Livre": "bg-yellow-100 text-yellow-800",
   "Amazon Brasil": "bg-orange-100 text-orange-800",
   "Magazine Luiza": "bg-blue-100 text-blue-800",
+  "KaBuM!": "bg-red-100 text-red-800",
+  "Casas Bahia": "bg-cyan-100 text-cyan-800",
 };
 
 export default function Offers() {
