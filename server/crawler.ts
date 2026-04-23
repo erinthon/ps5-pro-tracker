@@ -4,6 +4,7 @@ import { offers, priceHistory, stores } from "../drizzle/schema";
 import { scrapeMercadoLivre } from "./scrapers/mercadolivre";
 import { scrapeAmazon } from "./scrapers/amazon";
 import { scrapeMagazineLuiza } from "./scrapers/magazineluiza";
+import { scrapeKabum } from "./scrapers/kabum";
 import { getCatalogItem, DEFAULT_ITEM_ID, type MatchContext } from "../shared/catalog";
 
 interface ScrapedOffer {
@@ -40,6 +41,11 @@ const STORES: CrawlerStore[] = [
     name: "Magazine Luiza",
     url: "https://www.magazineluiza.com.br",
     scraper: scrapeMagazineLuiza,
+  },
+  {
+    name: "KaBuM!",
+    url: "https://www.kabum.com.br",
+    scraper: scrapeKabum,
   },
 ];
 
