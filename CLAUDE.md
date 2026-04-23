@@ -74,5 +74,5 @@ Requires `.env` with at minimum `DATABASE_URL` (MySQL connection string). Withou
 
 ## Known Issues
 
-- `runCrawler` tRPC mutation is `publicProcedure` — any unauthenticated user can trigger it. Rate-limited to 5 req/min but not auth-gated. Switch to `protectedProcedure` or `adminProcedure` if public access is undesirable.
+- `runCrawler` tRPC mutation is `adminProcedure` — only users with `role === 'admin'` can trigger it. The button is hidden in the UI for non-admins.
 - `ScrapedOffer` interface is duplicated in `crawler.ts` and each scraper file (`mercadolivre.ts`, `amazon.ts`, `magazineluiza.ts`, `kabum.ts`).

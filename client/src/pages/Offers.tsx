@@ -176,13 +176,15 @@ export default function Offers() {
                 </Select>
               </div>
             </div>
-            <div className="mt-4">
-              <Button onClick={handleRunCrawler} disabled={crawlerPending}>
-                {crawlerPending
-                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Atualizando...</>
-                  : <><RefreshCw className="mr-2 h-4 w-4" />Atualizar Agora</>}
-              </Button>
-            </div>
+            {user?.role === "admin" && (
+              <div className="mt-4">
+                <Button onClick={handleRunCrawler} disabled={crawlerPending}>
+                  {crawlerPending
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Atualizando...</>
+                    : <><RefreshCw className="mr-2 h-4 w-4" />Atualizar Agora</>}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

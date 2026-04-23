@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { publicProcedure, adminProcedure, router } from "../_core/trpc";
 import { getOffersWithFilters, getOfferById, getPriceHistoryForOffer, getStores } from "../db";
 import { runCrawlerManually } from "../scheduler";
 import { CATALOG } from "../../shared/catalog";
@@ -51,7 +51,7 @@ export const offersRouter = router({
     return CATALOG.map(({ id, label }) => ({ id, label }));
   }),
 
-  runCrawler: publicProcedure
+  runCrawler: adminProcedure
     .input(z.object({ itemId: z.enum(validItemIds).optional() }))
     .mutation(async ({ input }) => {
       try {
