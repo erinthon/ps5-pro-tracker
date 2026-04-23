@@ -13,7 +13,8 @@ const USER_AGENTS = [
 
 // Delays em ms entre tentativas: [1ª retry, 2ª retry]
 const RETRY_DELAYS = [1500, 4000];
-const RETRYABLE_STATUSES = new Set([429, 503, 504]);
+// 403 incluído pois Cloudflare pode bloquear temporariamente e liberar após espera
+const RETRYABLE_STATUSES = new Set([403, 429, 503, 504]);
 
 function randomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];

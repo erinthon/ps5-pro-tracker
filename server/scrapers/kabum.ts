@@ -16,6 +16,12 @@ export interface ScrapedOffer {
 
 const BASE_URL = "https://www.kabum.com.br";
 
+// Extra headers específicos do KaBuM para reduzir chance de bloqueio
+const KABUM_HEADERS: Record<string, string> = {
+  Referer: `${BASE_URL}/`,
+  Origin: BASE_URL,
+};
+
 function parsePriceBRL(raw: unknown): number | undefined {
   if (typeof raw === "number") return Math.round(raw * 100);
   if (typeof raw !== "string") return undefined;
@@ -46,27 +52,60 @@ interface KabumProduct {
   in_stock?: unknown;
 }
 
-function extractProducts(data: unknown): KabumProduct[] {
-  if (!data || typeof data !== "object") return [];
-  const obj = data as Record<string, unknown>;
+function isProductLike(obj: unknown): boolean {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  const p = obj as Record<string, unknown>;
+  const hasTitle = typeof p.title === "string" || typeof p.name === "string";
+  const hasPrice = p.price !== undefined || p.price_with_discount !== undefined;
+  return hasTitle && hasPrice;
+}
 
-  const paths = [
-    () => (obj as any)?.props?.pageProps?.productList?.data,
-    () => (obj as any)?.props?.pageProps?.productList?.products,
-    () => (obj as any)?.props?.pageProps?.products,
-    () => (obj as any)?.props?.pageProps?.data?.products,
-    () => (obj as any)?.props?.pageProps?.initialData?.products,
-    () => (obj as any)?.props?.pageProps?.search?.products,
-  ];
+/**
+ * Busca recursiva no JSON do __NEXT_DATA__ para encontrar o primeiro array
+ * cujos elementos parecem produtos KaBuM. Resiliente a mudanças de estrutura.
+ */
+function deepFindProductArray(obj: unknown, depth = 0): KabumProduct[] {
+  if (depth > 10 || !obj || typeof obj !== "object") return [];
 
-  for (const get of paths) {
-    try {
-      const products = get();
-      if (Array.isArray(products) && products.length > 0) return products;
-    } catch {}
+  if (Array.isArray(obj)) {
+    if (obj.length > 0 && isProductLike(obj[0])) return obj as KabumProduct[];
+    for (const item of obj) {
+      const found = deepFindProductArray(item, depth + 1);
+      if (found.length > 0) return found;
+    }
+    return [];
+  }
+
+  const record = obj as Record<string, unknown>;
+
+  // Prioriza chaves com alta probabilidade de conter produtos
+  const priorityKeys = ["products", "data", "productList", "items", "results", "catalog", "listing"];
+  for (const key of priorityKeys) {
+    if (key in record) {
+      const found = deepFindProductArray(record[key], depth + 1);
+      if (found.length > 0) return found;
+    }
+  }
+
+  // Fallback: percorre todas as chaves restantes
+  for (const [key, value] of Object.entries(record)) {
+    if (priorityKeys.includes(key) || !value || typeof value !== "object") continue;
+    const found = deepFindProductArray(value, depth + 1);
+    if (found.length > 0) return found;
   }
 
   return [];
+}
+
+function buildProductUrl(product: KabumProduct): string {
+  const code = String(product.code ?? "").trim();
+  const slug = (product.url_path ?? product.slug ?? "").trim().replace(/^\//, "");
+
+  if (slug.startsWith("http")) return slug;
+  if (slug && code) return `${BASE_URL}/produto/${code}/${slug}`;
+  if (slug) return `${BASE_URL}/produto/${slug}`;
+  if (code) return `${BASE_URL}/produto/${code}`;
+  return "";
 }
 
 function parseFromNextData(html: string): ScrapedOffer[] {
@@ -78,11 +117,15 @@ function parseFromNextData(html: string): ScrapedOffer[] {
   try {
     nextData = JSON.parse(nextDataScript);
   } catch {
+    console.warn("[KaBuM Scraper] __NEXT_DATA__ encontrado mas falhou ao parsear JSON");
     return [];
   }
 
-  const products = extractProducts(nextData);
-  if (products.length === 0) return [];
+  const products = deepFindProductArray(nextData);
+  if (products.length === 0) {
+    console.warn("[KaBuM Scraper] __NEXT_DATA__ parseado mas nenhum array de produtos encontrado");
+    return [];
+  }
 
   const offers: ScrapedOffer[] = [];
 
@@ -95,17 +138,11 @@ function parseFromNextData(html: string): ScrapedOffer[] {
       if (!price) continue;
 
       const originalPrice = parsePriceBRL(product.original_price);
-
-      const code = String(product.code ?? "");
-      const slug = product.url_path ?? product.slug ?? "";
-      const url = slug
-        ? slug.startsWith("http")
-          ? slug
-          : `${BASE_URL}/produto/${code}/${slug.replace(/^\//, "")}`
-        : code
-        ? `${BASE_URL}/produto/${code}`
-        : "";
+      const url = buildProductUrl(product);
       if (!url) continue;
+
+      const code = String(product.code ?? "").trim();
+      const slug = (product.url_path ?? product.slug ?? "").trim();
 
       const imageUrl =
         (Array.isArray(product.media) ? product.media[0]?.image : undefined) ??
@@ -157,7 +194,6 @@ function parseFromHtml(html: string): ScrapedOffer[] {
   const $ = cheerio.load(html);
   const offers: ScrapedOffer[] = [];
 
-  // KaBuM product cards — selectors based on their current HTML structure
   const cardSelectors = [
     "article.productCard",
     "[data-testid='product-card']",
@@ -182,12 +218,17 @@ function parseFromHtml(html: string): ScrapedOffer[] {
       if (!href) return;
 
       const url = href.startsWith("http") ? href : `${BASE_URL}${href}`;
-
-      // Extract product code from /produto/{code}/...
       const codeMatch = href.match(/\/produto\/(\d+)/);
       const productId = codeMatch?.[1] ?? href.split("/").filter(Boolean).pop() ?? "";
 
-      const titleSelectors = ["span.nameCard", "h2.nameCard", "[class*='nameCard']", "[class*='title']", "h2", "span[class*='Name']"];
+      const titleSelectors = [
+        "span.nameCard",
+        "h2.nameCard",
+        "[class*='nameCard']",
+        "[class*='title']",
+        "h2",
+        "span[class*='Name']",
+      ];
       let title = "";
       for (const sel of titleSelectors) {
         title = $card.find(sel).first().text().trim();
@@ -195,8 +236,12 @@ function parseFromHtml(html: string): ScrapedOffer[] {
       }
       if (!title) return;
 
-      // Current price (avoid crossed-out original price)
-      const priceSelectors = ["span.priceCard", "[class*='priceCard']", "[data-testid='price']", "span[class*='Price']:not([class*='old']):not([class*='Old'])"];
+      const priceSelectors = [
+        "span.priceCard",
+        "[class*='priceCard']",
+        "[data-testid='price']",
+        "span[class*='Price']:not([class*='old']):not([class*='Old'])",
+      ];
       let priceText = "";
       for (const sel of priceSelectors) {
         priceText = $card.find(sel).first().text().trim();
@@ -205,7 +250,12 @@ function parseFromHtml(html: string): ScrapedOffer[] {
       const price = parsePriceBRL(priceText);
       if (!price) return;
 
-      const origSelectors = ["span.oldPriceCard", "[class*='oldPrice']", "[class*='OldPrice']", "s[class*='Price']"];
+      const origSelectors = [
+        "span.oldPriceCard",
+        "[class*='oldPrice']",
+        "[class*='OldPrice']",
+        "s[class*='Price']",
+      ];
       let origText = "";
       for (const sel of origSelectors) {
         origText = $card.find(sel).first().text().trim();
@@ -240,23 +290,21 @@ export async function scrapeKabum(searchQuery: string): Promise<ScrapedOffer[]> 
   const searchUrl = `${BASE_URL}/busca/${slug}`;
 
   try {
-    const html = await fetchHtml(searchUrl);
+    const html = await fetchHtml(searchUrl, KABUM_HEADERS);
 
-    // Prefer __NEXT_DATA__ (structured, stable) over CSS selectors
     const nextDataOffers = parseFromNextData(html);
     if (nextDataOffers.length > 0) {
-      console.log(`[KaBuM Scraper] Encontradas ${nextDataOffers.length} ofertas via __NEXT_DATA__`);
+      console.log(`[KaBuM Scraper] ${nextDataOffers.length} ofertas via __NEXT_DATA__`);
       return nextDataOffers;
     }
 
-    // Fallback: parse rendered HTML cards
     const htmlOffers = parseFromHtml(html);
     if (htmlOffers.length > 0) {
-      console.log(`[KaBuM Scraper] Encontradas ${htmlOffers.length} ofertas via HTML`);
+      console.log(`[KaBuM Scraper] ${htmlOffers.length} ofertas via HTML`);
       return htmlOffers;
     }
 
-    console.warn("[KaBuM Scraper] Nenhum produto encontrado — página pode exigir JS rendering");
+    console.warn("[KaBuM Scraper] Nenhum produto encontrado — página pode exigir JS rendering ou IP bloqueado");
     return [];
   } catch (error) {
     console.error("[KaBuM Scraper] Erro ao scraping:", error);
