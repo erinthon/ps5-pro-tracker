@@ -26,20 +26,25 @@ Full-stack TypeScript monorepo: React 19 + Vite frontend, Express + tRPC backend
 ### Backend (`server/`)
 
 - `_core/index.ts` — Express app entry: Helmet, rate limiting, OAuth routes, tRPC at `/api/trpc`, static/Vite serving, starts scheduler on listen
-- `_core/env.ts` — All env vars (`DATABASE_URL`, `JWT_SECRET`, `OAUTH_SERVER_URL`, `VITE_APP_ID`, `OWNER_OPEN_ID`)
+- `_core/env.ts` — All env vars (`DATABASE_URL`, `JWT_SECRET`, `OAUTH_SERVER_URL`, `VITE_APP_ID`, `OWNER_OPEN_ID`, `BUILT_IN_FORGE_API_URL`, `BUILT_IN_FORGE_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `RESEND_API_KEY`)
 - `_core/trpc.ts` — Exports three procedure types: `publicProcedure` (no auth), `protectedProcedure` (requires session), `adminProcedure` (requires `role === 'admin'`)
 - `_core/context.ts` — Builds tRPC context; calls `sdk.authenticateRequest()` on every request, sets `ctx.user = null` if unauthenticated
-- `routers/offers.ts` — tRPC procedures: `list`, `getById`, `getPriceHistory`, `getStores`, `runCrawler` (all currently `publicProcedure`)
-- `crawler.ts` — Orchestrates scrapers, upserts offers by URL uniqueness, appends to `priceHistory` only when price changes. **Known issue:** calls `clearOffers()` at the start of every run, which cascade-deletes all `priceHistory` rows, defeating the tracking purpose.
+- `_core/llm.ts` — `invokeLLM()` wrapper around the Forge API (Gemini 2.5 Flash); handles message normalization, tool calls, and structured output schemas
+- `_core/notification.ts` — `notifyOwner()`: sends a push notification to the project owner via the Manus Notification Service; requires `BUILT_IN_FORGE_API_URL` and `BUILT_IN_FORGE_API_KEY`
+- `_core/email.ts` — `sendPriceDropEmail()`: sends an HTML e-mail via Resend when a price drop is detected; reads the recipient from `users.email` where `openId = OWNER_OPEN_ID`; no-ops silently if `RESEND_API_KEY` is absent
+- `routers.ts` — Root `appRouter`: mounts `system`, `auth` (`me` query + `logout` mutation), and `offers` sub-routers
+- `routers/offers.ts` — tRPC procedures: `list`, `getById`, `getPriceHistory`, `getStores`, `getCatalog`, `runCrawler` (all `publicProcedure`). `runCrawler` accepts optional `itemId` from the catalog.
+- `crawler.ts` — Orchestrates scrapers; applies `catalogItem.isMatch()` filter; upserts offers by URL; appends to `priceHistory` only on price change; calls `deleteStaleOffersForStore()` per store after each scrape (only when results are non-empty, to avoid accidental wipes on scraper failure)
 - `scheduler.ts` — cron `0 * * * *`, `isRunning` module-level guard prevents concurrent runs, initial crawl 5 s after startup
-- `scrapers/` — All three scrapers (Mercado Livre, Amazon, Magazine Luiza) are fully implemented with Cheerio. Magazine Luiza parses `__NEXT_DATA__` JSON embedded in the page.
-- `scrapers/filters.ts` — `isMatchingProduct()`: checks all query terms are present and no accessory keywords match
-- `db.ts` — Lazy singleton DB init (returns `null` if `DATABASE_URL` missing); all query functions live here
+- `scrapers/` — Four scrapers: Mercado Livre, Amazon, Magazine Luiza, KaBuM!. All use Cheerio. Magazine Luiza and KaBuM! first try `__NEXT_DATA__` JSON, then fall back to HTML parsing.
+- `storage.ts` — `storagePut` / `storageGet` helpers for the Forge storage proxy; requires `BUILT_IN_FORGE_API_URL` and `BUILT_IN_FORGE_API_KEY`
+- `db.ts` — Lazy singleton DB init (returns `null` if `DATABASE_URL` missing); all query functions live here, including `deleteStaleOffersForStore(storeId, activeUrls)`
 
 ### Frontend (`client/src/`)
 
-- `App.tsx` — Wouter router (not React Router)
-- `pages/Offers.tsx` — Main page: offer cards, filters (price range, store, stock), sort (price / date), manual crawler trigger. Sorting is client-side on the returned array.
+- `App.tsx` — Wouter router (not React Router); routes: `/` → `Home`, `/offers` → `Offers`
+- `pages/Home.tsx` — Landing page with Google OAuth login button (`/api/auth/google`)
+- `pages/Offers.tsx` — Offer cards, filters (price range, store, stock), sort (price / date), manual crawler trigger. Sorting is client-side on the returned array.
 - `lib/trpc.ts` — tRPC client setup with superjson transformer
 
 ### Database (`drizzle/schema.ts`)
@@ -55,14 +60,19 @@ Notable encoding choices — keep these consistent when writing queries or addin
 
 ### Shared (`shared/`)
 
-`types.ts` re-exports Drizzle schema types; `const.ts` holds `SEARCH_QUERY`, cookie names, and error message strings used by both client and server.
+- `types.ts` — re-exports Drizzle schema types
+- `const.ts` — cookie names and error message strings used by both client and server
+- `catalog.ts` — `CATALOG: CatalogItem[]` defines trackable products; each item has `id`, `label`, `searchQuery`, and `isMatch(ctx)` (price-aware title filter). The crawler uses `getCatalogItem(itemId)` to drive scraping. Currently contains one item: `ps5-pro-console`.
 
 ## Environment Setup
 
 Requires `.env` with at minimum `DATABASE_URL` (MySQL connection string). Without it the server starts but all DB operations return empty/null gracefully. See `SETUP.md` for full setup in Portuguese.
 
+`BUILT_IN_FORGE_API_URL` and `BUILT_IN_FORGE_API_KEY` are required for LLM calls, push notifications, and file storage; the server runs without them but those features will throw at runtime.
+
+`RESEND_API_KEY` enables e-mail notifications on price drops. Without it the feature is silently skipped. The recipient is the owner's e-mail stored in the DB (populated on first Google login). Get an API key at resend.com — free tier allows 3 000 e-mails/month.
+
 ## Known Issues
 
-- `clearOffers()` in `crawler.ts` wipes all offers (and cascades into `priceHistory`) on every crawl cycle. The `isDuplicateOffer()` function in the same file is dead code as a result. To enable real price-history tracking, remove the `clearOffers()` call.
 - `runCrawler` tRPC mutation is `publicProcedure` — any unauthenticated user can trigger it. Rate-limited to 5 req/min but not auth-gated. Switch to `protectedProcedure` or `adminProcedure` if public access is undesirable.
-- `ScrapedOffer` interface is duplicated in `crawler.ts`, `mercadolivre.ts`, `amazon.ts`, and `magazineluiza.ts`.
+- `ScrapedOffer` interface is duplicated in `crawler.ts` and each scraper file (`mercadolivre.ts`, `amazon.ts`, `magazineluiza.ts`, `kabum.ts`).

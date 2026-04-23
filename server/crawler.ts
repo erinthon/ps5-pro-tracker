@@ -6,6 +6,7 @@ import { scrapeAmazon } from "./scrapers/amazon";
 import { scrapeMagazineLuiza } from "./scrapers/magazineluiza";
 import { scrapeKabum } from "./scrapers/kabum";
 import { getCatalogItem, DEFAULT_ITEM_ID, type MatchContext } from "../shared/catalog";
+import { sendPriceDropEmail } from "./_core/email";
 
 interface ScrapedOffer {
   title: string;
@@ -67,7 +68,7 @@ async function getOrCreateStore(name: string, url: string) {
 async function createOrUpdateOffer(
   storeId: number,
   scrapedOffer: ScrapedOffer
-): Promise<{ id: number; isNew: boolean }> {
+): Promise<{ id: number; isNew: boolean; previousPrice: number | null }> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -81,6 +82,8 @@ async function createOrUpdateOffer(
   if (existing.length > 0) {
     // Atualizar oferta existente
     const existingOffer = existing[0];
+    const previousPrice = existingOffer.price;
+
     await db
       .update(offers)
       .set({
@@ -93,7 +96,7 @@ async function createOrUpdateOffer(
       .where(eq(offers.id, existingOffer.id));
 
     // Registrar no histórico de preços se o preço mudou
-    if (existingOffer.price !== scrapedOffer.price) {
+    if (previousPrice !== scrapedOffer.price) {
       await db.insert(priceHistory).values({
         offerId: existingOffer.id,
         price: scrapedOffer.price,
@@ -102,7 +105,11 @@ async function createOrUpdateOffer(
       });
     }
 
-    return { id: existingOffer.id, isNew: false };
+    return {
+      id: existingOffer.id,
+      isNew: false,
+      previousPrice: previousPrice !== scrapedOffer.price ? previousPrice : null,
+    };
   } else {
     // Criar nova oferta
     const [inserted] = await db.insert(offers).values({
@@ -126,7 +133,7 @@ async function createOrUpdateOffer(
       inStock: scrapedOffer.inStock ? 1 : 0,
     });
 
-    return { id: inserted.id, isNew: true };
+    return { id: inserted.id, isNew: true, previousPrice: null };
   }
 }
 
@@ -166,12 +173,22 @@ export async function runCrawler(itemId = DEFAULT_ITEM_ID): Promise<{
         // Processar cada oferta
         for (const scrapedOffer of scrapedOffers) {
           try {
-            const { isNew } = await createOrUpdateOffer(store.id, scrapedOffer);
+            const { isNew, previousPrice } = await createOrUpdateOffer(store.id, scrapedOffer);
             totalOffers++;
             if (isNew) {
               newOffers++;
             } else {
               updatedOffers++;
+            }
+
+            if (previousPrice !== null && scrapedOffer.price < previousPrice) {
+              await sendPriceDropEmail({
+                title: scrapedOffer.title,
+                url: scrapedOffer.url,
+                storeName: storeConfig.name,
+                previousPrice,
+                newPrice: scrapedOffer.price,
+              });
             }
           } catch (error) {
             const errorMsg = `Erro ao processar oferta de ${storeConfig.name}: ${error}`;
